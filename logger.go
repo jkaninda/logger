@@ -28,225 +28,270 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"sync"
 
 	"gopkg.in/natefinch/lumberjack.v2"
 )
 
+// LogLevel represents the severity levels for log messages
 type LogLevel string
 
+// Supported log levels constants
 const (
-	levelDebug   LogLevel = "debug"
-	levelInfo    LogLevel = "info"
-	levelWarning LogLevel = "warning"
-	levelError   LogLevel = "error"
-	levelOff     LogLevel = "off"
+	LevelDebug   LogLevel = "debug"   // Debug level for detailed debugging information
+	LevelInfo    LogLevel = "info"    // Info level for general operational messages
+	LevelWarning LogLevel = "warning" // Warning level for potentially harmful situations
+	LevelError   LogLevel = "error"   // Error level for error events
+	LevelOff     LogLevel = "off"     // Off level completely disables logging
 )
 
-// Logger is the main logger struct that wraps slog.Logger with additional configuration
+// Config holds all configurable parameters for the logger
+type Config struct {
+	Level      LogLevel // Minimum log level to output
+	OutputFile string   // Path to log file (empty for stdout)
+	MaxAgeDays int      // Maximum number of days to retain old log files
+	MaxBackups int      // Maximum number of old log files to retain
+	MaxSizeMB  int      // Maximum size in megabytes of the log file before rotation
+	Compress   bool     // Whether to compress rotated log files
+	JSONFormat bool     // Whether to use JSON formatting
+	UseDefault bool     // Whether to use slog.Default() format instead of custom handler
+}
+
+// Logger is the main logger struct that wraps slog.Logger with additional features
 type Logger struct {
-	logger     *slog.Logger   // Underlying slog logger instance
-	level      LogLevel       // Current logging level threshold
-	outputFile string         // Path to log file if file logging is enabled
-	maxAgeDays int            // Maximum number of days to retain old log files
-	jsonFormat bool           // Whether to use JSON formatting
-	disabled   bool           // Whether logging is completely disabled
-	fileWriter io.WriteCloser // File writer for log rotation
-	maxBackups int            // Maximum number of old log files to retain
-	maxSize    int            // Maximum size in MB before log rotation
-	compress   bool           // Whether to compress rotated log files
+	*slog.Logger                    // Embedded slog.Logger for core logging functionality
+	config       Config             // Current configuration
+	file         *lumberjack.Logger // File writer for log rotation (nil when using stdout)
+	mu           sync.Mutex         // Mutex for thread-safe operations
+	disabled     bool               // Flag indicating if logging is completely disabled
 }
 
-// ConfigFunc defines the type for configuration functions that modify Logger settings
-type ConfigFunc func(*Logger)
+// Option defines the type for configuration functions that modify Logger settings
+type Option func(*Config)
 
-// ********* Log Level Configuration Functions **********
-
-// WithDebugLevel sets the log level to debug
-func WithDebugLevel() ConfigFunc { return func(l *Logger) { l.level = levelDebug } }
-
-// WithInfoLevel sets the log level to info
-func WithInfoLevel() ConfigFunc { return func(l *Logger) { l.level = levelInfo } }
-
-// WithWarningLevel sets the log level to warning
-func WithWarningLevel() ConfigFunc { return func(l *Logger) { l.level = levelWarning } }
-
-// WithErrorLevel sets the log level to error
-func WithErrorLevel() ConfigFunc { return func(l *Logger) { l.level = levelError } }
-
-// WithLevelOff disables all logging
-func WithLevelOff() ConfigFunc { return func(l *Logger) { l.level = levelOff } }
-
-// ************ Output Configuration Functions **********
-
-// WithFile configures file output with the given filename
-func WithFile(outputFile string) ConfigFunc {
-	return func(l *Logger) { l.outputFile = outputFile }
-}
-
-// WithOutPutFile same to WithFile, configures file output with the given filename
-func WithOutPutFile(outputFile string) ConfigFunc {
-	return func(l *Logger) { l.outputFile = outputFile }
-}
-
-// WithMaxAgeInDays sets the maximum number of days to retain old log files
-func WithMaxAgeInDays(days int) ConfigFunc {
-	return func(l *Logger) { l.maxAgeDays = days }
-}
-
-// WithMaxSize sets the maximum size in MB before log rotation occurs
-func WithMaxSize(size int) ConfigFunc {
-	return func(l *Logger) { l.maxSize = size }
-}
-
-// WithCompress enables compression of rotated log files
-func WithCompress() ConfigFunc {
-	return func(l *Logger) { l.compress = true }
-}
-
-// WithMaxBackups sets the maximum number of old log files to retain
-func WithMaxBackups(maxBackups int) ConfigFunc {
-	return func(l *Logger) { l.maxBackups = maxBackups }
-}
-
-// WithJsonFormat enables JSON formatting for log output
-func WithJsonFormat() ConfigFunc {
-	return func(l *Logger) { l.jsonFormat = true }
-}
-
-// ****** Logger Setup Functions ********
-
-// New creates a new Logger instance with optional configurations
-// Defaults:
-//   - Level: error
-//   - Output: stdout
-//   - Max age: 7 days
-//   - Format: text
-func New(configs ...ConfigFunc) *Logger {
-	// Initialize with default values
-	l := &Logger{
-		level:      levelError,
-		outputFile: "",
-		maxAgeDays: 7,
-		logger:     slog.Default(),
-	}
-
-	// Apply any provided configurations
-	return l.With(configs...)
-}
+// Default returns a new logger using slog.Default() configuration
+// Output format: "2025/05/31 09:00:08 INFO Application started version=1.0.0 config=default"
 func Default() *Logger {
-	// Initialize with default values
 	return &Logger{
-		level:      levelInfo,
-		outputFile: "",
-		maxAgeDays: 7,
-		maxBackups: 3,
-		logger:     slog.Default(),
+		Logger:   slog.Default(),           // Use Go's standard library default logger
+		config:   Config{UseDefault: true}, // Mark as using default format
+		disabled: false,
 	}
 }
 
-// With applies the given configurations to the Logger and returns the modified Logger
-func (l *Logger) With(configs ...ConfigFunc) *Logger {
-	// Apply each configuration function
-	for _, conf := range configs {
-		conf(l)
+// New creates a new Logger instance with customizable options
+// Default configuration:
+//   - Level: info
+//   - MaxAgeDays: 7
+//   - MaxBackups: 3
+//   - MaxSizeMB: 100
+//   - Format: text
+//   - Output: stdout
+func New(opts ...Option) *Logger {
+	// Set default configuration values
+	cfg := Config{
+		Level:      LevelInfo,
+		MaxAgeDays: 7,
+		MaxBackups: 3,
+		MaxSizeMB:  100,
+		UseDefault: false,
 	}
 
-	// Handle special case where logging is completely disabled
-	if l.level == levelOff {
-		l.disabled = true
-		l.logger = slog.New(slog.NewTextHandler(io.Discard, nil))
-		return l
+	// Apply all provided configuration options
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+
+	// Create logger instance
+	l := &Logger{
+		config:   cfg,
+		disabled: cfg.Level == LevelOff, // Disable if level is "off"
+	}
+
+	// Initialize the underlying logger
+	l.initLogger()
+	return l
+}
+
+// initLogger initializes or re-initializes the underlying slog.Logger based on current config
+// This method is thread-safe through mutex locking
+func (l *Logger) initLogger() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	// If logging is disabled, use a discard handler
+	if l.disabled {
+		l.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
+		return
+	}
+
+	// If using default format, use slog's default logger
+	if l.config.UseDefault {
+		l.Logger = slog.Default()
+		return
 	}
 
 	// Default to stdout output
 	var output io.Writer = os.Stdout
 
 	// Configure file output if specified
-	if l.outputFile != "" {
-		lumberjackWriter := &lumberjack.Logger{
-			Filename:   l.outputFile,
-			MaxAge:     l.maxAgeDays,
-			MaxBackups: l.maxBackups,
-			MaxSize:    l.maxSize,
-			Compress:   l.compress,
+	if l.config.OutputFile != "" {
+		l.file = &lumberjack.Logger{
+			Filename:   l.config.OutputFile, // Log file path
+			MaxAge:     l.config.MaxAgeDays, // Days to retain logs
+			MaxBackups: l.config.MaxBackups, // Number of backups to keep
+			MaxSize:    l.config.MaxSizeMB,  // Max file size in MB
+			Compress:   l.config.Compress,   // Whether to compress backups
 		}
-		l.fileWriter = lumberjackWriter
-		output = lumberjackWriter
+		output = l.file
 	}
 
-	// Convert our log level to slog's level type
-	slogLevel := l.toSlogLevel(l.level)
-	opts := &slog.HandlerOptions{Level: slogLevel}
+	// Create handler options with configured log level
+	opts := &slog.HandlerOptions{
+		Level: l.toSlogLevel(l.config.Level),
+	}
 
 	// Initialize the appropriate handler based on format preference
-	if l.jsonFormat {
-		l.logger = slog.New(slog.NewJSONHandler(output, opts))
+	if l.config.JSONFormat {
+		l.Logger = slog.New(slog.NewJSONHandler(output, opts))
 	} else {
-		l.logger = slog.New(slog.NewTextHandler(output, opts))
-	}
-
-	return l
-}
-
-// ******** Logging Methods **********
-
-// Debug logs a message at debug level with optional key-value pairs
-func (l *Logger) Debug(msg string, args ...interface{}) {
-	if !l.disabled {
-		l.logger.Debug(msg, args...)
+		l.Logger = slog.New(slog.NewTextHandler(output, opts))
 	}
 }
 
-// Info logs a message at info level with optional key-value pairs
-func (l *Logger) Info(msg string, args ...interface{}) {
-	if !l.disabled {
-		l.logger.Info(msg, args...)
+// WithOptions creates a new Logger instance with additional configuration options applied
+// Returns a new Logger instance, leaving the original unchanged (immutable pattern)
+func (l *Logger) WithOptions(opts ...Option) *Logger {
+	// Start with current config
+	newCfg := l.config
+
+	// Apply all provided options
+	for _, opt := range opts {
+		opt(&newCfg)
 	}
-}
 
-// Warning logs a message at warning level with optional key-value pairs
-func (l *Logger) Warning(msg string, args ...interface{}) {
-	if !l.disabled {
-		l.logger.Warn(msg, args...)
+	// Create and return new logger with updated config
+	newLogger := &Logger{
+		config:   newCfg,
+		disabled: newCfg.Level == LevelOff,
 	}
+	newLogger.initLogger()
+	return newLogger
 }
 
-// Error logs a message at error level with optional key-value pairs
-func (l *Logger) Error(msg string, args ...interface{}) {
-	if !l.disabled {
-		l.logger.Error(msg, args...)
-	}
-}
-
-// Fatal logs a message at error level and exits the program with status 1
-func (l *Logger) Fatal(msg string, args ...interface{}) {
-	l.logger.Error(msg, args...)
-	os.Exit(1)
-}
-
-// IsDebugEnabled returns true if debug logging is enabled
-func (l *Logger) IsDebugEnabled() bool {
-	return l.level == levelDebug && !l.disabled
-}
-
-// Close cleans up resources (like file handles) used by the logger
+// Close releases resources used by the logger (primarily file handles)
+// Should be called when the logger is no longer needed
 func (l *Logger) Close() error {
-	if l.fileWriter != nil {
-		return l.fileWriter.Close()
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	if l.file != nil {
+		return l.file.Close()
 	}
 	return nil
+}
+
+// ******************** Utility Methods ******************** /
+
+// IsDebugEnabled returns true if debug level logging is enabled
+func (l *Logger) IsDebugEnabled() bool {
+	return l.config.Level == LevelDebug && !l.disabled
+}
+
+// IsInfoEnabled returns true if info level logging is enabled
+func (l *Logger) IsInfoEnabled() bool {
+	return (l.config.Level == LevelDebug || l.config.Level == LevelInfo) && !l.disabled
+}
+
+// IsWarningEnabled returns true if warning level logging is enabled
+func (l *Logger) IsWarningEnabled() bool {
+	return l.config.Level != LevelError && l.config.Level != LevelOff && !l.disabled
+}
+
+// IsErrorEnabled returns true if error level logging is enabled
+func (l *Logger) IsErrorEnabled() bool {
+	return l.config.Level != LevelOff && !l.disabled
+}
+
+// GetLevel returns the current log level setting
+func (l *Logger) GetLevel() LogLevel {
+	return l.config.Level
+}
+
+// GetConfig returns a copy of the current logger configuration
+func (l *Logger) GetConfig() Config {
+	return l.config
+}
+
+// *************** Configuration Options ***************/
+
+// WithLevel sets the minimum log level for output
+func WithLevel(level LogLevel) Option {
+	return func(c *Config) { c.Level = level }
+}
+
+// WithOutputFile configures file output with the given path
+func WithOutputFile(file string) Option {
+	return func(c *Config) { c.OutputFile = file }
+}
+
+// WithMaxAge sets maximum days to retain log files
+func WithMaxAge(days int) Option {
+	return func(c *Config) { c.MaxAgeDays = days }
+}
+
+// WithMaxBackups sets maximum number of old log files to keep
+func WithMaxBackups(count int) Option {
+	return func(c *Config) { c.MaxBackups = count }
+}
+
+// WithMaxSize sets maximum log file size in megabytes before rotation
+func WithMaxSize(sizeMB int) Option {
+	return func(c *Config) { c.MaxSizeMB = sizeMB }
+}
+
+// WithCompression enables compression of rotated log files
+func WithCompression() Option {
+	return func(c *Config) { c.Compress = true }
+}
+
+// WithJSONFormat enables JSON formatting for log output
+func WithJSONFormat() Option {
+	return func(c *Config) { c.JSONFormat = true }
+}
+
+// ************ Predefined Level Options ************/
+
+// WithDebugLevel sets log level to debug
+func WithDebugLevel() Option { return WithLevel(LevelDebug) }
+
+// WithInfoLevel sets log level to info
+func WithInfoLevel() Option { return WithLevel(LevelInfo) }
+
+// WithWarningLevel sets log level to warning
+func WithWarningLevel() Option { return WithLevel(LevelWarning) }
+
+// WithErrorLevel sets log level to error
+func WithErrorLevel() Option { return WithLevel(LevelError) }
+
+// WithLevelOff completely disables logging output
+func WithLevelOff() Option { return WithLevel(LevelOff) }
+
+// WithDefaultFormat configures the logger to use slog.Default() format
+func WithDefaultFormat() Option {
+	return func(c *Config) { c.UseDefault = true }
 }
 
 // toSlogLevel converts our LogLevel type to slog.Level
 func (l *Logger) toSlogLevel(level LogLevel) slog.Level {
 	switch level {
-	case levelDebug:
+	case LevelDebug:
 		return slog.LevelDebug
-	case levelInfo:
+	case LevelInfo:
 		return slog.LevelInfo
-	case levelWarning:
+	case LevelWarning:
 		return slog.LevelWarn
-	case levelError:
+	case LevelError:
 		return slog.LevelError
 	default:
 		return slog.LevelInfo

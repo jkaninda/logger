@@ -33,24 +33,23 @@ func TestDefault(t *testing.T) {
 func TestInfo(t *testing.T) {
 	logger := New(
 		WithInfoLevel(),
-		WithMaxAgeInDays(1),
+		WithMaxAge(1),
 		WithMaxSize(100),
-		WithJsonFormat(),
+		WithJSONFormat(),
 	)
-
 	logger.Info("Application started", "version", "1.0.0")
 }
 func TestWithFile(t *testing.T) {
 	logger := New(
 		WithInfoLevel(),
-		WithFile("app.log"),
-		WithMaxAgeInDays(1),
+		WithOutputFile("app.log"),
+		WithMaxAge(1),
 		WithMaxSize(100),
-		WithJsonFormat(),
+		WithJSONFormat(),
 	)
 	logger.Error("Hello error message", "data", 1)
 	logger.Info("Hello info message", "data", 1)
-	logger.Warning("Hello warning message", "data", 1)
+	logger.Warn("Hello warning message", "data", 1)
 	logger.Debug("Hello debug message", "data", 1)
 
 	logger.Info("Application started", "version", "1.0.0")
@@ -58,15 +57,40 @@ func TestWithFile(t *testing.T) {
 func TestWithMaxBackups(t *testing.T) {
 	logger := New(
 		WithInfoLevel(),
-		WithFile("app.log"),
-		WithMaxAgeInDays(30),
+		WithOutputFile("app.log"),
+		WithMaxAge(30),
 		WithMaxSize(100),
-		WithJsonFormat(),
+		WithJSONFormat(),
 	)
 
 	logger.Error("Hello error message", "data", 1)
 	logger.Info("Hello info message", "data", 1)
-	logger.Warning("Hello warning message", "data", 1)
+	logger.Warn("Hello warning message", "data", 1)
 	logger.Debug("Hello debug message", "data", 1)
 	logger.Info("Application started", "version", "1.0.0")
+}
+
+func TestWithOptions(t *testing.T) {
+	// Create initial logger
+	logger := New(
+		WithInfoLevel(),
+		WithOutputFile("test.log"),
+	)
+
+	// Apply new options
+	newLogger := logger.WithOptions(
+		WithDebugLevel(),
+		WithJSONFormat(),
+	)
+
+	// Verify changes were applied
+	if newLogger.GetLevel() != LevelDebug {
+		t.Error("Debug level not applied")
+	}
+	if !newLogger.GetConfig().JSONFormat {
+		t.Error("JSON format not applied")
+	}
+	if newLogger.GetConfig().OutputFile != "test.log" {
+		t.Error("Original output file not preserved")
+	}
 }
