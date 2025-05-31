@@ -17,6 +17,7 @@ go get github.com/jkaninda/logger
 
 ```go
 l := logger.New(
+    WithOutputFile("/var/log/app.log"),
     WithInfoLevel(),
     WithMaxAge(1),
     WithMaxSize(100),
