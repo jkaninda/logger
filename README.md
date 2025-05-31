@@ -17,17 +17,20 @@ go get github.com/jkaninda/logger
 
 ```go
 l := logger.New(
-    logger.WithInfoLevel(),
-    logger.WithFile("app.log"),
-    logger.WithMaxAgeInDays(30),
-    logger.WithMaxSize(100),
-    logger.WithJsonFormat(),
+    WithOutputFile("/var/log/app.log"),
+    WithInfoLevel(),
+    WithMaxAge(1),
+    WithMaxSize(100),
+    WithJSONFormat(),
 )
-
 l.Info("Application started", "version", "1.0.0")
 ```
+## Default config
 
-
+```go
+	logger := logger.Default()
+	logger.Info("Application started", "version", "1.0.0", "config", "default")
+```
 ---
 
 ## Contributing
