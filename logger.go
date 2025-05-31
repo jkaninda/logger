@@ -55,6 +55,7 @@ type Config struct {
 	Compress   bool     // Whether to compress rotated log files
 	JSONFormat bool     // Whether to use JSON formatting
 	UseDefault bool     // Whether to use slog.Default() format instead of custom handler
+	AddCaller  bool     // Whether to add caller information (file and line number)
 }
 
 // Logger is the main logger struct that wraps slog.Logger with additional features
@@ -87,6 +88,7 @@ func Default() *Logger {
 //   - MaxSizeMB: 100
 //   - Format: text
 //   - Output: stdout
+//   - AddCaller: false
 func New(opts ...Option) *Logger {
 	// Set default configuration values
 	cfg := Config{
@@ -95,6 +97,7 @@ func New(opts ...Option) *Logger {
 		MaxBackups: 3,
 		MaxSizeMB:  100,
 		UseDefault: false,
+		AddCaller:  false,
 	}
 
 	// Apply all provided configuration options
@@ -148,7 +151,8 @@ func (l *Logger) initLogger() {
 
 	// Create handler options with configured log level
 	opts := &slog.HandlerOptions{
-		Level: l.toSlogLevel(l.config.Level),
+		Level:     l.toSlogLevel(l.config.Level),
+		AddSource: l.config.AddCaller,
 	}
 
 	// Initialize the appropriate handler based on format preference
@@ -260,6 +264,11 @@ func WithJSONFormat() Option {
 	return func(c *Config) { c.JSONFormat = true }
 }
 
+// WithCaller enables including caller information (file and line number) in logs
+func WithCaller() Option {
+	return func(c *Config) { c.AddCaller = true }
+}
+
 // ************ Predefined Level Options ************/
 
 // WithDebugLevel sets log level to debug
@@ -280,6 +289,12 @@ func WithLevelOff() Option { return WithLevel(LevelOff) }
 // WithDefaultFormat configures the logger to use slog.Default() format
 func WithDefaultFormat() Option {
 	return func(c *Config) { c.UseDefault = true }
+}
+
+// Fatal logs a message at error level and exits the program with status 1
+func (l *Logger) Fatal(msg string, args ...any) {
+	l.Error(msg, args...)
+	os.Exit(1)
 }
 
 // toSlogLevel converts our LogLevel type to slog.Level

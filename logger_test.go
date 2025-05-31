@@ -32,6 +32,7 @@ func TestDefault(t *testing.T) {
 }
 func TestInfo(t *testing.T) {
 	logger := New(
+		WithCaller(),
 		WithInfoLevel(),
 		WithMaxAge(1),
 		WithMaxSize(100),
