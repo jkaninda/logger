@@ -1,4 +1,4 @@
-# LOGGER - Lightweight Go Web Framework
+# LOGGER
 
 [![Tests](https://github.com/jkaninda/logger/actions/workflows/tests.yml/badge.svg)](https://github.com/jkaninda/logger/actions/workflows/tests.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/jkaninda/logger)](https://goreportcard.com/report/github.com/jkaninda/logger)
