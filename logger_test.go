@@ -27,36 +27,37 @@ package logger
 import "testing"
 
 func TestDefault(t *testing.T) {
-	logger := Default()
-	logger.Info("Application started", "version", "1.0.0", "config", "default")
+	l := Default()
+	l.Info("Application started", "version", "1.0.0", "config", "default")
 }
 func TestInfo(t *testing.T) {
-	logger := New(
+	l := New(
 		WithCaller(),
 		WithInfoLevel(),
 		WithMaxAge(1),
 		WithMaxSize(100),
 		WithJSONFormat(),
 	)
-	logger.Info("Application started", "version", "1.0.0")
+	l.Info("Application started", "version", "1.0.0")
+	Info("Hello logger")
 }
 func TestWithFile(t *testing.T) {
-	logger := New(
+	l := New(
 		WithInfoLevel(),
 		WithOutputFile("app.log"),
 		WithMaxAge(1),
 		WithMaxSize(100),
 		WithJSONFormat(),
 	)
-	logger.Error("Hello error message", "data", 1)
-	logger.Info("Hello info message", "data", 1)
-	logger.Warn("Hello warning message", "data", 1)
-	logger.Debug("Hello debug message", "data", 1)
+	l.Error("Hello error message", "data", 1)
+	l.Info("Hello info message", "data", 1)
+	l.Warn("Hello warning message", "data", 1)
+	l.Debug("Hello debug message", "data", 1)
 
-	logger.Info("Application started", "version", "1.0.0")
+	l.Info("Application started", "version", "1.0.0")
 }
 func TestWithMaxBackups(t *testing.T) {
-	logger := New(
+	l := New(
 		WithInfoLevel(),
 		WithOutputFile("app.log"),
 		WithMaxAge(30),
@@ -64,22 +65,22 @@ func TestWithMaxBackups(t *testing.T) {
 		WithJSONFormat(),
 	)
 
-	logger.Error("Hello error message", "data", 1)
-	logger.Info("Hello info message", "data", 1)
-	logger.Warn("Hello warning message", "data", 1)
-	logger.Debug("Hello debug message", "data", 1)
-	logger.Info("Application started", "version", "1.0.0")
+	l.Error("Hello error message", "data", 1)
+	l.Info("Hello info message", "data", 1)
+	l.Warn("Hello warning message", "data", 1)
+	l.Debug("Hello debug message", "data", 1)
+	l.Info("Application started", "version", "1.0.0")
 }
 
 func TestWithOptions(t *testing.T) {
 	// Create initial logger
-	logger := New(
+	l := New(
 		WithInfoLevel(),
 		WithOutputFile("test.log"),
 	)
 
 	// Apply new options
-	newLogger := logger.WithOptions(
+	newLogger := l.WithOptions(
 		WithDebugLevel(),
 		WithJSONFormat(),
 	)
