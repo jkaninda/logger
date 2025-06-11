@@ -33,9 +33,6 @@ import (
 	"gopkg.in/natefinch/lumberjack.v2"
 )
 
-// LogLevel represents the severity levels for log messages
-type LogLevel string
-
 // Supported log levels constants
 const (
 	LevelDebug   LogLevel = "debug"   // Debug level for detailed debugging information
@@ -45,37 +42,49 @@ const (
 	LevelOff     LogLevel = "off"     // Off level completely disables logging
 )
 
-// Config holds all configurable parameters for the logger
-type Config struct {
-	Level      LogLevel // Minimum log level to output
-	OutputFile string   // Path to log file (empty for stdout)
-	MaxAgeDays int      // Maximum number of days to retain old log files
-	MaxBackups int      // Maximum number of old log files to retain
-	MaxSizeMB  int      // Maximum size in megabytes of the log file before rotation
-	Compress   bool     // Whether to compress rotated log files
-	JSONFormat bool     // Whether to use JSON formatting
-	UseDefault bool     // Whether to use slog.Default() format instead of custom handler
-	AddCaller  bool     // Whether to add caller information (file and line number)
-}
+var logger *slog.Logger
 
-// Logger is the main logger struct that wraps slog.Logger with additional features
-type Logger struct {
-	*slog.Logger                    // Embedded slog.Logger for core logging functionality
-	config       Config             // Current configuration
-	file         *lumberjack.Logger // File writer for log rotation (nil when using stdout)
-	mu           sync.Mutex         // Mutex for thread-safe operations
-	disabled     bool               // Flag indicating if logging is completely disabled
-}
+// LogLevel represents the severity levels for log messages
+type (
+	LogLevel string
 
-// Option defines the type for configuration functions that modify Logger settings
-type Option func(*Config)
+	// Config holds all configurable parameters for the logger
+	Config struct {
+		Level      LogLevel // Minimum log level to output
+		OutputFile string   // Path to log file (empty for stdout)
+		MaxAgeDays int      // Maximum number of days to retain old log files
+		MaxBackups int      // Maximum number of old log files to retain
+		MaxSizeMB  int      // Maximum size in megabytes of the log file before rotation
+		Compress   bool     // Whether to compress rotated log files
+		JSONFormat bool     // Whether to use JSON formatting
+		UseDefault bool     // Whether to use slog.Default() format instead of custom handler
+		AddCaller  bool     // Whether to add caller information (file and line number)
+	}
+
+	// Logger is the main logger struct that wraps slog.Logger with additional features
+	Logger struct {
+		*slog.Logger                    // Embedded slog.Logger for core logging functionality
+		config       Config             // Current configuration
+		file         *lumberjack.Logger // File writer for log rotation (nil when using stdout)
+		mu           sync.Mutex         // Mutex for thread-safe operations
+		disabled     bool               // Flag indicating if logging is completely disabled
+	}
+
+	// Option defines the type for configuration functions that modify Logger settings
+	Option func(*Config)
+)
 
 // Default returns a new logger using slog.Default() configuration
 // Output format: "2025/05/31 09:00:08 INFO Application started version=1.0.0 config=default"
 func Default() *Logger {
+	useDefault := false
+	if logger == nil {
+		useDefault = true       // Mark as using default format
+		logger = slog.Default() // Use Go's standard library default logger
+	}
 	return &Logger{
-		Logger:   slog.Default(),           // Use Go's standard library default logger
-		config:   Config{UseDefault: true}, // Mark as using default format
+		Logger:   logger,
+		config:   Config{UseDefault: useDefault},
 		disabled: false,
 	}
 }
@@ -161,6 +170,7 @@ func (l *Logger) initLogger() {
 	} else {
 		l.Logger = slog.New(slog.NewTextHandler(output, opts))
 	}
+	logger = l.Logger
 }
 
 // WithOptions creates a new Logger instance with additional configuration options applied
@@ -295,6 +305,26 @@ func WithDefaultFormat() Option {
 func (l *Logger) Fatal(msg string, args ...any) {
 	l.Error(msg, args...)
 	os.Exit(1)
+}
+
+// Info logs a message at info level
+func Info(msg string, args ...any) {
+	Default().Info(msg, args...)
+}
+
+// Warn logs a message at Warn level
+func Warn(msg string, args ...any) {
+	Default().Warn(msg, args...)
+}
+
+// Error logs a message at Error level
+func Error(msg string, args ...any) {
+	Default().Error(msg, args...)
+}
+
+// Fatal logs a message at error level and exits the program with status 1
+func Fatal(msg string, args ...any) {
+	Default().Fatal(msg, args...)
 }
 
 // toSlogLevel converts our LogLevel type to slog.Level
