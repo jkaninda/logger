@@ -317,6 +317,11 @@ func Warn(msg string, args ...any) {
 	Default().Warn(msg, args...)
 }
 
+// Debug logs a message at Debug level
+func Debug(msg string, args ...any) {
+	Default().Debug(msg, args...)
+}
+
 // Error logs a message at Error level
 func Error(msg string, args ...any) {
 	Default().Error(msg, args...)
